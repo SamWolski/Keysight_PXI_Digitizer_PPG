@@ -13,6 +13,7 @@ class Driver(LabberDriver):
 
     def performOpen(self, options={}):
         """Perform the operation of opening the instrument connection"""
+        self.initLogger()
         # set time step and resolution
         self.nBit = 16
         self.bitRange = float(2**(self.nBit-1)-1)
@@ -60,6 +61,23 @@ class Driver(LabberDriver):
             # SIGNADYNE - channel numbers start with 0
             self.ch_index_zero = 0
         self.log('HW:', hw_version)
+
+
+    def initLogger(self):
+        ## Dir and file setup
+        log_dir = os.path.expanduser("~/driver_logs/")
+        log_file = "Digitizer_PPG_{:%y%m%d_%H%M%S}.log".format(datetime.now())
+        ## Create log dir if it does not exist
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        ## logger object config and init
+        logging.basicConfig(filename=log_path, filemode="a",
+                            level=logging.WARNING,
+                            format="%(asctime)s.%(msecs)06f %(name)-8s: %(message)s",
+                            datefmt="%y-%m-%d %H:%M:%S")
+        self._logger = logging.getLogger("Digitizer_PPG")
+        self._logger.info("Logging initialized to {}".format(log_path))
+
 
 
     def getHwCh(self, n):
