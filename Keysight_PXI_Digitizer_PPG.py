@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 import os
 import sys
-sys.path.append('C:\Program Files (x86)\Keysight\SD1\Libraries\Python')
+import logging
+from datetime import datetime
 
+sys.path.append('C:\Program Files (x86)\Keysight\SD1\Libraries\Python')
 from BaseDriver import LabberDriver, Error, IdError
 import keysightSD1
 
