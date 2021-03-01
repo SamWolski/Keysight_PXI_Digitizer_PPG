@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import os
 import sys
 sys.path.append('C:\Program Files (x86)\Keysight\SD1\Libraries\Python')
 
@@ -164,6 +165,7 @@ class Driver(LabberDriver):
 
     def performArm(self, quant_names, options={}):
         """Perform the instrument arm operation"""
+        self._logger.debug("performArm called.")
         # make sure we are arming for reading traces, if not return
         signal_names = ['Ch%d - Signal' % (n + 1) for n in range(4)]
         signal_arm = [name in signal_names for name in quant_names]
@@ -176,10 +178,7 @@ class Driver(LabberDriver):
 
     def getTraces(self, bArm=True, bMeasure=True, n_seq=0):
         """Get all active traces"""
-        # # test timing
-        # import time
-        # t0 = time.perf_counter()
-        # lT = []
+        self._logger.debug("getTraces called. bArm: {}, bMeasure: {}.".format(bArm, bMeasure))
 
         # find out which traces to get
         lCh = []
@@ -234,100 +233,35 @@ class Driver(LabberDriver):
         # return if not measure
         if not bMeasure:
             return
-        # define number of cycles to read at a time
-        nCycleTotal = nSeg * nAv
-        nCall = int(np.ceil(nCycleTotal / nCyclePerCall))
-        lScale = [(self.getRange(ch) / self.bitRange) for ch in range(self.nCh)]
-        # keep track of progress in percent
-        old_percent = 0
 
-        # proceed depending on segment or not segment
-        if nSeg <= 1:
-            # non-segmented acquisiton
-            for n in range(nCall):
-                # number of cycles for this call, could be fewer for last call
-                nCycle = min(nCyclePerCall, nCycleTotal - (n * nCyclePerCall))
+        ## Measurement starts here
+        
+        iMeasChannel = 0 # TODO make this dynamic!
+        sOutputDir = os.path.expanduser("~/Digitizer_PPG/data")
+        dScale = (self.getRange(iMeasChannel) / self.bitRange)
+        nEvents = 1 # TODO make this dynamic!
+        ## Loop over fixed number of events
+        for nn in range(nEvents):
 
-                # report progress, only report integer percent
-                if nCall > 100:
-                    new_percent = int(100 * n / nCall)
-                    if new_percent > old_percent:
-                        old_percent = new_percent
-                        self.reportStatus(
-                            'Acquiring traces ({}%)'.format(new_percent))
+            ## TODO report progress
 
-                # capture traces one by one
-                for nCh in lCh:
-                    # channel number depens on hardware version
-                    ch = self.getHwCh(nCh)
-                    data = self.DAQread(self.dig, ch, nPts * nCycle,
-                                        int(1000 + self.timeout_ms / nCall))
-                    # stop if no data
-                    if data.size == 0:
-                        return
+            ## Capture traces - only 1 channel!
+            ch = self.getHwCh(iMeasChannel)
+            self._logger.debug("Fetching data from DAQ...")
+            data_raw  = self.DAQread(self.dig, ch, nPts, int(1000+self.timeout_ms))
+            self._logger.debug("Preprocessing data")
+            ## Scale raw data to convert to physical units (V)
+            data = data_raw * dScale
+            
+            sOutputPath = os.path.join(sOutputDir, str(nn))
+            ## Dump to file (with logging to check timing)
+            self._logger.debug("Writing data to file...")
+            np.save(sOutputPath, data, allow_pickle=False, fix_imports=False)
+            self._logger.debug("Data written to "+sOutputPath)
 
-                    # average
-                    data = data.reshape((nCycle, nPts)).mean(0)
-                    # adjust scaling to account for summing averages
-                    scale = lScale[nCh] * (nCycle / nAv)
-                    # convert to voltage, add to total average
-                    self.lTrace[nCh] += data * scale
-
-                # break if stopped from outside
-                if self.isStopped():
-                    break
-                # lT.append('N: %d, Tot %.1f ms' % (n, 1000 * (time.perf_counter() - t0)))
-
-        else:
-            # segmented acquisition, get caLls per segment
-            (nCallSeg, extra_call) = divmod(nSeg, nCyclePerCall)
-            # pre-calculate list of cycles/call, last call may have more cycles
-            if nCallSeg == 0:
-                nCallSeg = 1
-                lCyclesSeg = [nSeg]
-            else:
-                lCyclesSeg = [nCyclePerCall] * nCallSeg
-                lCyclesSeg[-1] = nCyclePerCall + extra_call
-            # pre-calculate scale, should include scaling for averaging
-            lScale = np.array(lScale, dtype=float) / nAv
-
-
-            for n in range(nAv):
-                # report progress, only report integer percent
-                if nAv > 1:
-                    new_percent = int(100 * n / nAv)
-                    if new_percent > old_percent:
-                        old_percent = new_percent
-                        self.reportStatus(
-                            'Acquiring traces ({}%)'.format(new_percent))
-
-                count = 0
-                # loop over number of calls per segment
-                for m, nCycle in enumerate(lCyclesSeg):
-
-                    # capture traces one by one
-                    for nCh in lCh:
-                        # channel number depens on hardware version
-                        ch = self.getHwCh(nCh)
-                        data = self.DAQread(self.dig, ch, nPts * nCycle,
-                                            int(1000 + self.timeout_ms / nCall))
-                        # stop if no data
-                        if data.size == 0:
-                            return
-                        # store all data in one long vector
-                        self.lTrace[nCh][count:(count + data.size)] += \
-                            data * lScale[nCh]
-
-                    count += data.size
-
-                # break if stopped from outside
-                if self.isStopped():
-                    break
-
-                # lT.append('N: %d, Tot %.1f ms' % (n, 1000 * (time.perf_counter() - t0)))
-
-        # # log timing info
-        # self.log(': '.join(lT))
+            ## Break if stopped from outside
+            if self.isStopped():
+                break
 
 
     def getRange(self, ch):
