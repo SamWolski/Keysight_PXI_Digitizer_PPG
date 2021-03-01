@@ -70,12 +70,13 @@ class Driver(LabberDriver):
         ## Dir and file setup
         log_dir = os.path.expanduser("~/driver_logs/")
         log_file = "Digitizer_PPG_{:%y%m%d_%H%M%S}.log".format(datetime.now())
+        log_path = os.path.join(log_dir, log_file)
         ## Create log dir if it does not exist
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
         ## logger object config and init
         logging.basicConfig(filename=log_path, filemode="a",
-                            level=logging.WARNING,
+                            level=logging.DEBUG,
                             format="%(asctime)s.%(msecs)06f %(name)-8s: %(message)s",
                             datefmt="%y-%m-%d %H:%M:%S")
         self._logger = logging.getLogger("Digitizer_PPG")
