@@ -170,27 +170,8 @@ class Driver(LabberDriver):
         if not np.any(signal_arm):
             return
 
-        # arm by calling get traces
-        if self.isHardwareLoop(options):
-            # in hardware looping, number of records is set by the hw loop
-            (seq_no, n_seq) = self.getHardwareLoopIndex(options)
-            nSample = int(self.getValue('Number of samples'))
-
-            # arm instrument, then report completed to allow client to continue
-            self.reportStatus('Digitizer - Waiting for signal')
-            self.getTraces(bArm=True, bMeasure=False, n_seq=n_seq)
-            self.report_arm_completed()
-            # directly start collecting data (digitizer buffer is limited)
-            self.getTraces(bArm=False, bMeasure=True, n_seq=n_seq)
-            # re-shape data and place in trace buffer
-            self.reshaped_traces = []
-            for trace in self.lTrace:
-                if len(trace) > 0:
-                    trace = trace.reshape((n_seq, nSample))
-                self.reshaped_traces.append(trace)
-
-        else:
-            self.getTraces(bArm=True, bMeasure=False)
+        ## Skip hardware looping, just arm without measuring
+        self.getTraces(bArm=True, bMeasure=False)
 
 
     def getTraces(self, bArm=True, bMeasure=True, n_seq=0):
