@@ -239,11 +239,15 @@ class Driver(LabberDriver):
         ## Measurement starts here
         
         iMeasChannel = 0 # TODO make this dynamic!
-        sOutputDir = os.path.expanduser("~/Digitizer_PPG/data")
+        sOutputPath = os.path.expanduser("~/Digitizer_PPG/data/data_out.npy")
         dScale = (self.getRange(iMeasChannel) / self.bitRange)
         nEvents = 1 # TODO make this dynamic!
+        ## Data container
+        lData = []
         ## Loop over fixed number of events
         for nn in range(nEvents):
+
+            self._logger.debug("Watiting for event "+str(nn))
 
             ## TODO report progress
 
@@ -254,16 +258,20 @@ class Driver(LabberDriver):
             self._logger.debug("Preprocessing data")
             ## Scale raw data to convert to physical units (V)
             data = data_raw * dScale
-            
-            sOutputPath = os.path.join(sOutputDir, str(nn))
-            ## Dump to file (with logging to check timing)
-            self._logger.debug("Writing data to file...")
-            np.save(sOutputPath, data, allow_pickle=False, fix_imports=False)
-            self._logger.debug("Data written to "+sOutputPath)
+            ## Append to list
+            lData.append(data)
 
             ## Break if stopped from outside
             if self.isStopped():
                 break
+
+        self._logger.info("Data collection completed after "+str(nEvents)+" trigger events.")
+        ## Convert to array
+        aData = np.array(lData)
+        ## Dump to file (with logging to check timing)
+        self._logger.debug("Writing data to file...")
+        np.save(sOutputPath, aData, allow_pickle=False, fix_imports=False)
+        self._logger.debug("Data written to "+sOutputPath)
 
 
     def getRange(self, ch):
