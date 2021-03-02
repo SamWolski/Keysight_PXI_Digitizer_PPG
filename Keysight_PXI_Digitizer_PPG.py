@@ -81,6 +81,7 @@ class Driver(LabberDriver):
                             datefmt="%y-%m-%d %H:%M:%S")
         self._logger = logging.getLogger("Digitizer_PPG")
         self._logger.info("Logging initialized to {}".format(log_path))
+        self._logger.debug("Using python version {}".format(sys.version_info))
 
 
 
@@ -242,11 +243,15 @@ class Driver(LabberDriver):
         iMeasChannel = 0 # TODO make this dynamic!
         sOutputPath = os.path.expanduser("~/Digitizer_PPG/data/data_out.npy")
         dScale = (self.getRange(iMeasChannel) / self.bitRange)
-        nEvents = 1 # TODO make this dynamic!
+        nEvents = int(self.getValue("Number of trigger events"))
+        self._logger.info("Number of trigger events: {}".format(nEvents))
         ## Data container
         lData = []
         ## Loop over fixed number of events
         for nn in range(nEvents):
+
+            self._logger.debug("Starting DAQ acquisition...")
+            self.dig.DAQstartMultiple(iChMask)
 
             self._logger.debug("Watiting for event "+str(nn))
 
@@ -256,19 +261,25 @@ class Driver(LabberDriver):
             ch = self.getHwCh(iMeasChannel)
             self._logger.debug("Fetching data from DAQ...")
             data_raw  = self.DAQread(self.dig, ch, nPts, int(1000+self.timeout_ms))
-            self._logger.debug("Preprocessing data")
-            ## Scale raw data to convert to physical units (V)
-            data = data_raw * dScale
             ## Append to list
-            lData.append(data)
+            self._logger.debug("Assigning data...")
+            lData.append(data_raw)
+            ## 
 
             ## Break if stopped from outside
             if self.isStopped():
                 break
 
+
         self._logger.info("Data collection completed after "+str(nEvents)+" trigger events.")
         ## Convert to array
-        aData = np.array(lData)
+        # self._logger.debug("lData: {}".format(lData))
+        # self._logger.debug("lData type: {}".format(type(lData)))
+        # self._logger.debug("First element of lData: {}".format(lData[0]))
+        # self._logger.debug("Type of first element: {}".format(type(lData[0])))
+        aDataRaw = np.array(lData, dtype=np.int16)
+        ## Scale raw data to convert to physical units (V)
+        aData = aDataRaw * dScale
         ## Dump to file (with logging to check timing)
         self._logger.debug("Writing data to file...")
         np.save(sOutputPath, aData, allow_pickle=False, fix_imports=False)
@@ -293,6 +304,7 @@ class Driver(LabberDriver):
             if nPoints > 0:
                 data = (keysightSD1.c_short * nPoints)()
                 nPointsOut = dig._SD_Object__core_dll.SD_AIN_DAQread(dig._SD_Object__handle, nDAQ, data, nPoints, timeOut)
+                self._logger.debug("Points received: "+str(nPointsOut))
                 if nPointsOut > 0:
                     return np.frombuffer(data, dtype=np.int16, count=nPoints)
                 else:
