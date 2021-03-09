@@ -10,6 +10,9 @@ import keysightSD1
 
 import numpy as np
 
+import queue
+import threading
+
 ## Microsecond formatting for logger
 class MusecFormatter(logging.Formatter):
     converter=datetime.fromtimestamp
@@ -213,7 +216,7 @@ class Driver(LabberDriver):
                 iChMask += 2**n
         # get current settings
         nPts = int(self.getValue('Number of samples'))
-        nCyclePerCall = int(self.getValue('Records per Buffer'))
+        nRecordsPerBuffer = int(self.getValue('Records per Buffer'))
         # in hardware loop mode, ignore records and use number of sequences
         if n_seq > 0:
             nSeg = n_seq
@@ -261,49 +264,58 @@ class Driver(LabberDriver):
         ## Measurement starts here
         
         iMeasChannel = 0 # TODO make this dynamic!
-        sOutputPath = os.path.expanduser("~/Digitizer_PPG/data/data_out.npy")
+        sOutputDir = os.path.expanduser("~/Digitizer_PPG/data/")
         dScale = (self.getRange(iMeasChannel) / self.bitRange)
         nEvents = int(self.getValue("Number of trigger events"))
         self._logger.info("Number of trigger events: {}".format(nEvents))
-        ## Data container
-        lData = []
+        
+        ## Saver thread
+        self._logger.debug("Starting saver thread...")
+        self.saver_queue = queue.Queue(maxsize=nEvents)
+        threading.Thread(target=self.saver, args=(sOutputDir, dScale)).start()
+
+        nEventBuffers = int(np.ceil(nEvents / nRecordsPerBuffer))
         ## Loop over fixed number of events
-        for nn in range(nEvents):
+        for bb in range(nEventBuffers):
+            self._logger.debug("Event buffer "+str(bb))
 
-            self._logger.debug("Starting DAQ acquisition...")
-            self.dig.DAQstartMultiple(iChMask)
+            lData = []
 
-            self._logger.debug("Watiting for event "+str(nn))
+            ## Number of trigger events in this call; can be less for final call
+            nEventsInBuffer = min(nRecordsPerBuffer, nEvents-(bb*nRecordsPerBuffer))
+            self._logger.debug("Expecting "+str(nEventsInBuffer)+" events in this set.")
+            for nn in range(nEventsInBuffer):
+                self._logger.debug("Starting DAQ acquisition...")
+                self.dig.DAQstartMultiple(iChMask)
 
-            ## TODO report progress
+                self._logger.debug("Waiting for event "+str(nn))
 
-            ## Capture traces - only 1 channel!
-            ch = self.getHwCh(iMeasChannel)
-            self._logger.debug("Fetching data from DAQ...")
-            data_raw  = self.DAQread(self.dig, ch, nPts, int(1000+self.timeout_ms))
-            ## Append to list
-            self._logger.debug("Assigning data...")
-            lData.append(data_raw)
+                ## TODO report progress
+
+                ## Capture traces - only 1 channel!
+                ch = self.getHwCh(iMeasChannel)
+                self._logger.debug("Fetching data from DAQ...")
+                data_raw  = self.DAQread(self.dig, ch, nPts, int(1000+self.timeout_ms))
+                ## Append to list
+                lData.append(data_raw)
+
+                ## Break if stopped from outside
+                if self.isStopped():
+                    break
+
+            ## 
+            self._logger.debug("Adding data to queue...")
+            self.saver_queue.put(lData)
             ## 
 
             ## Break if stopped from outside
             if self.isStopped():
                 break
 
-
         self._logger.info("Data collection completed after "+str(nEvents)+" trigger events.")
-        ## Convert to array
-        # self._logger.debug("lData: {}".format(lData))
-        # self._logger.debug("lData type: {}".format(type(lData)))
-        # self._logger.debug("First element of lData: {}".format(lData[0]))
-        # self._logger.debug("Type of first element: {}".format(type(lData[0])))
-        aDataRaw = np.array(lData, dtype=np.int16)
-        ## Scale raw data to convert to physical units (V)
-        aData = aDataRaw * dScale
-        ## Dump to file (with logging to check timing)
-        self._logger.debug("Writing data to file...")
-        np.save(sOutputPath, aData, allow_pickle=False, fix_imports=False)
-        self._logger.debug("Data written to "+sOutputPath)
+        self.saver_queue.put("exit")
+        self.saver_queue.join()
+
 
 
     def getRange(self, ch):
@@ -340,6 +352,27 @@ class Driver(LabberDriver):
         (seq_no, n_seq) = self.getHardwareLoopIndex(options)
         # after getting data, pick values to return
         return quant.getTraceDict(self.reshaped_traces[ch][seq_no], dt=self.dt)
+
+
+    ## Multithreading
+
+    def saver(self, sOutputDir, dScale):
+        file_index = 0
+        for lData in iter(self.saver_queue.get, 'exit'):
+            self._logger.debug("Received buffer "+str(file_index))
+            self._logger.debug("Consolidating data list into array...")
+            aDataRaw = np.array(lData, dtype=np.int16)
+            self._logger.debug("Scaling data...")
+            aData = aDataRaw * dScale
+            self._logger.debug("Writing data to file...")
+            sOutputPath = os.path.join(sOutputDir, "data_out_"+str(file_index)+".npy")
+            np.save(sOutputPath, aData, allow_pickle=False, fix_imports=False)
+            self._logger.info("Data written to "+sOutputPath)
+            self.saver_queue.task_done()
+            file_index += 1
+        ## After receiving "exit" call
+        self.saver_queue.task_done()
+
 
 
 if __name__ == '__main__':
