@@ -10,6 +10,18 @@ import keysightSD1
 
 import numpy as np
 
+## Microsecond formatting for logger
+class MusecFormatter(logging.Formatter):
+    converter=datetime.fromtimestamp
+    def formatTime(self, record, datefmt=None):
+        ct = self.converter(record.created)
+        if datefmt:
+            s = ct.strftime(datefmt)
+        else:
+            t = ct.strftime("%y-%m-%d %H:%M:%S")
+            s = "%s.%03d" % (t, record.msecs)
+        return s
+
 
 class Driver(LabberDriver):
     """ This class implements the Keysight PXI digitizer for PPG use"""
@@ -75,11 +87,19 @@ class Driver(LabberDriver):
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
         ## logger object config and init
-        logging.basicConfig(filename=log_path, filemode="a",
-                            level=logging.DEBUG,
-                            format="%(asctime)s.%(msecs)06f %(name)-8s: %(message)s",
-                            datefmt="%y-%m-%d %H:%M:%S")
+        # logging.basicConfig(filename=log_path, filemode="a",
+        #                     level=logging.DEBUG,
+        #                     # format="%(asctime)s %(name)-8s: %(message)s",
+        #                     # datefmt="%y-%m-%d %H:%M:%S"
+        #                     )
         self._logger = logging.getLogger("Digitizer_PPG")
+        self._logger.setLevel(logging.DEBUG)
+        file_handler = logging.FileHandler(filename=log_path, mode="a")
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(MusecFormatter(
+                                    fmt="%(asctime)s %(name)-8s: %(message)s",
+                                    datefmt="%y-%m-%d %H:%M:%S.%f"))
+        self._logger.addHandler(file_handler)
         self._logger.info("Logging initialized to {}".format(log_path))
         self._logger.debug("Using python version {}".format(sys.version_info))
 
