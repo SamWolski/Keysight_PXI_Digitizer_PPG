@@ -269,10 +269,13 @@ class Driver(LabberDriver):
         nEvents = int(self.getValue("Number of trigger events"))
         self._logger.info("Number of trigger events: {}".format(nEvents))
         
-        ## Saver thread
-        self._logger.debug("Starting saver thread...")
-        self.saver_queue = queue.Queue(maxsize=nEvents)
-        threading.Thread(target=self.saver, args=(sOutputDir, dScale)).start()
+        bUseMultithreading = self.getValue("Use multithreading")
+        self._logger.info("Multithreading enabled: {}".format(bUseMultithreading))
+        if bUseMultithreading:
+            ## Saver thread
+            self._logger.debug("Starting saver thread...")
+            self.saver_queue = queue.Queue(maxsize=nEvents)
+            threading.Thread(target=self.saver, args=(sOutputDir, dScale)).start()
 
         nEventBuffers = int(np.ceil(nEvents / nRecordsPerBuffer))
         ## Loop over fixed number of events
@@ -304,8 +307,19 @@ class Driver(LabberDriver):
                     break
 
             ## 
-            self._logger.debug("Adding data to queue...")
-            self.saver_queue.put(lData)
+            if bUseMultithreading:
+                self._logger.debug("Adding data to queue...")
+                self.saver_queue.put(lData)
+            else:
+                ## Save data directly
+                self._logger.debug("Consolidating data list into array...")
+                aDataRaw = np.array(lData, dtype=np.int16)
+                self._logger.debug("Scaling data...")
+                aData = aDataRaw * dScale
+                self._logger.debug("Writing data to file...")
+                sOutputPath = os.path.join(sOutputDir, "data_out_"+str(bb)+".npy")
+                np.save(sOutputPath, aData, allow_pickle=False, fix_imports=False)
+                self._logger.info("Data written to "+sOutputPath)
             ## 
 
             ## Break if stopped from outside
@@ -313,8 +327,9 @@ class Driver(LabberDriver):
                 break
 
         self._logger.info("Data collection completed after "+str(nEvents)+" trigger events.")
-        self.saver_queue.put("exit")
-        self.saver_queue.join()
+        if bUseMultithreading:
+            self.saver_queue.put("exit")
+            self.saver_queue.join()
 
 
 
