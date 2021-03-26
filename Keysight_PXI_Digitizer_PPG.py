@@ -13,6 +13,32 @@ import numpy as np
 import queue
 import threading
 
+
+def generate_log_bools(n_events, total_events):
+    """
+    Generate a log-spaced array of `n_events` True values in a list of length 
+    `total_events`
+    """
+    ## Generate initial log-spaced list, rounded to integers
+    event_indices = np.round(
+        np.logspace(0, np.log10(total_events), n_events)-1).astype(int)
+
+    ## Remove duplicates by incrementing values
+    event_indices_clean = np.zeros_like(event_indices)
+    test_index = -1
+    for ii, index_val in enumerate(event_indices):
+        if index_val <= test_index:
+            index_val = test_index + 1
+        test_index = index_val
+        event_indices_clean[ii] = index_val
+
+    ## Convert to true-false array
+    event_bools_list = np.array([False]*total_events)
+    event_bools_list[event_indices_clean] = True
+
+    return event_bools_list
+
+
 ## Microsecond formatting for logger
 class MusecFormatter(logging.Formatter):
     converter=datetime.fromtimestamp
@@ -216,7 +242,6 @@ class Driver(LabberDriver):
                 iChMask += 2**n
         # get current settings
         nPts = int(self.getValue('Number of samples'))
-        nRecordsPerBuffer = int(self.getValue('Records per Buffer'))
         # in hardware loop mode, ignore records and use number of sequences
         if n_seq > 0:
             nSeg = n_seq
@@ -266,28 +291,46 @@ class Driver(LabberDriver):
         iMeasChannel = 0 # TODO make this dynamic!
         sOutputDir = os.path.expanduser("~/Digitizer_PPG/data/")
         dScale = (self.getRange(iMeasChannel) / self.bitRange)
-        nEvents = int(self.getValue("Number of trigger events"))
-        self._logger.info("Number of trigger events: {}".format(nEvents))
-        
+        bSparse = self.getValue("Log-spaced sparse event handling")
+        nRecords = int(self.getValue('Saved trigger events'))
+        if bSparse:
+            nEvents = int(self.getValue("Total trigger events"))
+            ## Generate list of filtering bools to decide which datasets to save
+            lSaveEventFlags = generate_log_bools(nRecords, nEvents)
+        else:
+            nEvents = nRecords
+            lSaveEventFlags = [True]*nEvents
+        self._logger.info("Number of saved/total trigger events: {}/{}".format(nRecords, nEvents))
+
         bUseMultithreading = self.getValue("Use multithreading")
         self._logger.info("Multithreading enabled: {}".format(bUseMultithreading))
         if bUseMultithreading:
             ## Saver thread
             self._logger.debug("Starting saver thread...")
-            self.saver_queue = queue.Queue(maxsize=nEvents)
+            self.saver_queue = queue.Queue(maxsize=nRecords)
             threading.Thread(target=self.saver, args=(sOutputDir, dScale)).start()
 
-        nEventBuffers = int(np.ceil(nEvents / nRecordsPerBuffer))
+        if bSparse:
+            nRecordsPerBuffer = nRecords
+            nEventsPerBuffer = nEvents
+            nEventBuffers = 1
+        else:
+            nRecordsPerBuffer = int(self.getValue('Records per Buffer'))
+            nEventsPerBuffer = nRecordsPerBuffer
+            nEventBuffers = int(np.ceil(nRecords / nRecordsPerBuffer))
         ## Loop over fixed number of events
         for bb in range(nEventBuffers):
             self._logger.debug("Event buffer "+str(bb))
 
             lData = []
 
-            ## Number of trigger events in this call; can be less for final call
-            nEventsInBuffer = min(nRecordsPerBuffer, nEvents-(bb*nRecordsPerBuffer))
-            self._logger.debug("Expecting "+str(nEventsInBuffer)+" events in this set.")
-            for nn in range(nEventsInBuffer):
+            if bSparse:
+                self._logger.debug("Expecting "+str(nRecordsPerBuffer)+" records from "+str(nEventsPerBuffer)+" events in this set.")
+            else:
+                ## Number of trigger events in this call; can be less for final call
+                nEventsPerBuffer = min(nEventsPerBuffer, nEvents-(bb*nEventsPerBuffer))
+                self._logger.debug("Expecting "+str(nEventsPerBuffer)+" events in this set.")
+            for nn, bEventFlag in zip(range(nEventsPerBuffer), lSaveEventFlags):
                 self._logger.debug("Starting DAQ acquisition...")
                 self.dig.DAQstartMultiple(iChMask)
 
@@ -299,8 +342,12 @@ class Driver(LabberDriver):
                 ch = self.getHwCh(iMeasChannel)
                 self._logger.debug("Fetching data from DAQ...")
                 data_raw  = self.DAQread(self.dig, ch, nPts, int(1000+self.timeout_ms))
-                ## Append to list
-                lData.append(data_raw)
+                if bEventFlag:
+                    self._logger.debug("Adding data record to list.")
+                    ## Append to list
+                    lData.append(data_raw)
+                else:
+                    self._logger.debug("Discarding data record.")
 
                 ## Break if stopped from outside
                 if self.isStopped():
