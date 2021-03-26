@@ -318,6 +318,9 @@ class Driver(LabberDriver):
             nRecordsPerBuffer = int(self.getValue('Records per Buffer'))
             nEventsPerBuffer = nRecordsPerBuffer
             nEventBuffers = int(np.ceil(nRecords / nRecordsPerBuffer))
+
+        file_index_counter = 0
+        nRecordsPerFile = int(self.getValue("Records per File"))
         ## Loop over fixed number of events
         for bb in range(nEventBuffers):
             self._logger.debug("Event buffer "+str(bb))
@@ -358,15 +361,22 @@ class Driver(LabberDriver):
                 self._logger.debug("Adding data to queue...")
                 self.saver_queue.put(lData)
             else:
+
                 ## Save data directly
-                self._logger.debug("Consolidating data list into array...")
-                aDataRaw = np.array(lData, dtype=np.int16)
-                self._logger.debug("Scaling data...")
-                aData = aDataRaw * dScale
-                self._logger.debug("Writing data to file...")
-                sOutputPath = os.path.join(sOutputDir, "data_out_"+str(bb)+".npy")
-                np.save(sOutputPath, aData, allow_pickle=False, fix_imports=False)
-                self._logger.info("Data written to "+sOutputPath)
+                nNumberOfFiles = int(np.ceil(len(lData)/nRecordsPerFile))
+                self._logger.debug("Saving "+str(len(lData))+" total records...")
+                for nfile in range(nNumberOfFiles):
+                    list_slice = slice(nfile*nRecordsPerFile, (nfile+1)*nRecordsPerFile)
+                    self._logger.debug("Slicing: {}".format(list_slice))
+                    self._logger.debug("Consolidating data subset into array...")
+                    aDataRaw = np.array(lData[list_slice], dtype=np.int16)
+                    self._logger.debug("Scaling data...")
+                    aData = aDataRaw * dScale
+                    self._logger.debug("Writing data to file...")
+                    sOutputPath = os.path.join(sOutputDir, "data_out_"+str(file_index_counter)+".npy")
+                    np.save(sOutputPath, aData, allow_pickle=False, fix_imports=False)
+                    self._logger.info("Data written to "+sOutputPath)
+                    file_index_counter += 1
             ## 
 
             ## Break if stopped from outside
