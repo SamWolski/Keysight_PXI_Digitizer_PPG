@@ -299,6 +299,7 @@ class Driver(LabberDriver):
         sOutputDir = os.path.expanduser("~/Digitizer_PPG/data/")
         dScale = (self.getRange(iMeasChannel) / self.bitRange)
         bSparse = self.getValue("Log-spaced sparse event handling")
+        bScaleValues = self.getValue("Scale values before saving")
         nRecords = int(self.getValue('Saved trigger events'))
         if bSparse:
             nEvents = int(self.getValue("Total trigger events"))
@@ -388,9 +389,10 @@ class Driver(LabberDriver):
                     list_slice = slice(nfile*nRecordsPerFile, (nfile+1)*nRecordsPerFile)
                     self._logger.debug("Slicing: {}".format(list_slice))
                     self._logger.debug("Consolidating data subset into array...")
-                    aDataRaw = np.array(lData[list_slice], dtype=np.int16)
-                    self._logger.debug("Scaling data...")
-                    aData = aDataRaw * dScale
+                    aData = np.array(lData[list_slice], dtype=np.int16)
+                    if bScaleValues:
+                        self._logger.debug("Scaling data...")
+                        aData = aData * dScale
                     self._logger.debug("Writing data to file...")
                     sOutputPath = os.path.join(sOutputDir, "data_out_"+str(file_index_counter)+".npy")
                     np.save(sOutputPath, aData, allow_pickle=False, fix_imports=False)
