@@ -3,6 +3,7 @@ import os
 import sys
 import logging
 from datetime import datetime
+import multiprocessing
 
 sys.path.append('C:\Program Files (x86)\Keysight\SD1\Libraries\Python')
 from BaseDriver import LabberDriver, Error, IdError
@@ -12,6 +13,10 @@ import numpy as np
 
 import queue
 import threading
+
+
+## multiprocessing parameters
+address = ("localhost", 50020)
 
 
 def generate_log_bools(n_events, total_events):
@@ -131,7 +136,9 @@ class Driver(LabberDriver):
         self._logger.addHandler(file_handler)
         self._logger.info("Logging initialized to {}".format(log_path))
         self._logger.debug("Using python version {}".format(sys.version_info))
-
+        self._logger.debug("Python installation is at {}".format(sys.executable))
+        # self._logger.debug("Imported modules (from sys.modules.keys()): {}".format(sys.modules.keys()))
+        # self._logger.debug("sys.path is: {}".format(sys.path))
 
 
     def getHwCh(self, n):
@@ -334,6 +341,18 @@ class Driver(LabberDriver):
                 nEventsPerBuffer = min(nEventsPerBuffer, nEvents-(bb*nEventsPerBuffer))
                 self._logger.debug("Expecting "+str(nEventsPerBuffer)+" events in this set.")
             for nn, bEventFlag in zip(range(nEventsPerBuffer), lSaveEventFlags):
+                # ## The very first time, wait for a request from the AWG driver
+                if (bb==0) and (nn==0):
+                    ## If we need to wait, do it here!
+                    self._logger.debug("Starting Client connection...")
+                    conn = multiprocessing.connection.Client(address, authkey=b"p")
+                    self._logger.debug("Sending request to AWG driver...")
+                    conn.send("")
+                    self._logger.debug("Listening for response from AWG driver...")
+                    _ = conn.recv() # should block until the response is received
+                    self._logger.debug("Received response from AWG driver; closing connection object.")
+                    conn.close()
+                ## The first time, we will only get here after sync
                 self._logger.debug("Starting DAQ acquisition...")
                 self.dig.DAQstartMultiple(iChMask)
 
