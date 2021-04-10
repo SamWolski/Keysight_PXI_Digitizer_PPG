@@ -265,8 +265,8 @@ class Driver(LabberDriver):
             self.lTrace = [np.array([])] * self.nCh
             # configure trigger for all active channels
             for nCh in lCh:
-                # init data
-                self.lTrace[nCh] = np.zeros((nSeg * nPts))
+                # init data - only 1 point to save space
+                self.lTrace[nCh] = np.zeros((1))
                 # channel number depens on hardware version
                 ch = self.getHwCh(nCh)
                 # extra config for trig mode
