@@ -15,10 +15,6 @@ import queue
 import threading
 
 
-## multiprocessing parameters
-address = ("localhost", 50020)
-
-
 def generate_log_bools(n_events, total_events):
     """
     Generate a log-spaced array of `n_events` True values in a list of length 
@@ -346,7 +342,7 @@ class Driver(LabberDriver):
                 if (bb==0) and (nn==0):
                     ## If we need to wait, do it here!
                     self._logger.debug("Starting Client connection...")
-                    conn = multiprocessing.connection.Client(address, authkey=b"p")
+                    conn = multiprocessing.connection.Client(("localhost", int(self.getValue("AWG TCP Port"))), authkey=b"p")
                     self._logger.debug("Sending request to AWG driver...")
                     conn.send("")
                     self._logger.debug("Listening for response from AWG driver...")
