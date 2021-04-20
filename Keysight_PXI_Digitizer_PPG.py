@@ -14,6 +14,10 @@ import numpy as np
 import queue
 import threading
 
+def set_high_priority():  
+    """ Set the priority of the process to high."""  
+    os.system("wmic process where processid=\""+str(os.getpid())+"\" CALL   setpriority \"high priority\"") 
+
 
 def generate_log_bools(n_events, total_events):
     """
@@ -59,6 +63,10 @@ class Driver(LabberDriver):
     def performOpen(self, options={}):
         """Perform the operation of opening the instrument connection"""
         self.initLogger()
+        ## Increase process priority
+        self._logger.info("Setting process priority...")
+        set_high_priority()
+        self._logger.info("Process priority set.")
         # set time step and resolution
         self.nBit = 16
         self.bitRange = float(2**(self.nBit-1)-1)
