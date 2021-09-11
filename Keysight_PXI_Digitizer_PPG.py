@@ -19,14 +19,22 @@ def set_high_priority():
     os.system("wmic process where processid=\""+str(os.getpid())+"\" CALL   setpriority \"high priority\"") 
 
 
-def generate_log_bools(n_events, total_events):
+def generate_log_bools(n_events, total_events, initial_skip=0, save_first=True):
     """
     Generate a log-spaced array of `n_events` True values in a list of length 
-    `total_events`
+    `total_events`. Skip the first `initial_skip` events, potentially always 
+    saving the first one if `save_first` is true, but in all cases maintain the
+    saved and total numbers.
     """
+    ## If we're skipping any initial events, we need to account for whether or not we're saving the first value
+    actual_initial_skip = max(initial_skip, save_first)
+
     ## Generate initial log-spaced list, rounded to integers
-    event_indices = np.round(
-        np.logspace(0, np.log10(total_events), n_events)-1).astype(int)
+    event_indices = actual_initial_skip+np.round(
+        np.logspace(0, np.log10(total_events-actual_initial_skip), n_events-save_first)-1).astype(int)
+    ## Append the first event if need be
+    if save_first:
+        event_indices = np.concatenate([np.array([0]), event_indices])
 
     ## Remove duplicates by incrementing values
     event_indices_clean = np.zeros_like(event_indices)
@@ -300,15 +308,17 @@ class Driver(LabberDriver):
         ## Measurement starts here
         
         iMeasChannel = 0 # TODO make this dynamic!
-        sOutputDir = os.path.expanduser("~/Digitizer_PPG/data/")
+        sOutputDir = "D:/Digitizer_PPG/data" # TODO make this dynamic!
         dScale = (self.getRange(iMeasChannel) / self.bitRange)
         bSparse = self.getValue("Log-spaced sparse event handling")
         bScaleValues = self.getValue("Scale values before saving")
         nRecords = int(self.getValue('Saved trigger events'))
         if bSparse:
             nEvents = int(self.getValue("Total trigger events"))
+            nInitialSkip = int(self.getValue("Skip initial events"))
+            bSaveFirst = bool(self.getValue("Always save first event"))
             ## Generate list of filtering bools to decide which datasets to save
-            lSaveEventFlags = generate_log_bools(nRecords, nEvents)
+            lSaveEventFlags = generate_log_bools(nRecords, nEvents, nInitialSkip, bSaveFirst)
         else:
             nEvents = nRecords
             lSaveEventFlags = [True]*nEvents
