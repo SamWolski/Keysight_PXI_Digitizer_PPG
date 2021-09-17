@@ -308,6 +308,7 @@ class Driver(LabberDriver):
         ## Measurement starts here
         
         iMeasChannel = 0 # TODO make this dynamic!
+        iRefChannel = 1 # TODO make this dynamic!
         sOutputDir = "D:/Digitizer_PPG/data" # TODO make this dynamic!
         dScale = (self.getRange(iMeasChannel) / self.bitRange)
         bSparse = self.getValue("Log-spaced sparse event handling")
@@ -419,6 +420,26 @@ class Driver(LabberDriver):
                 break
 
         self._logger.info("Data collection completed after "+str(nEvents)+" trigger events.")
+        
+        ## Get phase reference data from direct connection channel
+        self._logger.info("Collecting reference trace...")
+        ch = self.getHwCh(iRefChannel)
+        self._logger.debug("Starting DAQ acquisition...")
+        self.dig.DAQstartMultiple(iChMask)
+        self._logger.debug("Fetching data from DAQ...")
+        data_raw = self.DAQread(self.dig, ch, nPts, int(1000+self.timeout_ms))
+        self._logger.info("Reference trace collected.")
+        self._logger.debug("Saving reference data...")
+        aData = np.array(data_raw, dtype=np.int16)
+        if bScaleValues:
+            self._logger.debug("Scaling reference data...")
+            aData = aData * dScale
+        self._logger.debug("Writing data to file...")
+        sOutputPath = os.path.join(sOutputDir, "data_out_ref.npy")
+        np.save(sOutputPath, aData, allow_pickle=False, fix_imports=False)
+        self._logger.info("Data written to "+sOutputPath)
+        
+        ## Multithreading clean up
         if bUseMultithreading:
             self.saver_queue.put("exit")
             self.saver_queue.join()
